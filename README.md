@@ -21,11 +21,12 @@ Delete that folder after editing `policies.md`, or call `build_index(force=True)
 ## Architecture
 
 ```
-policies.md ──> MarkdownHeaderTextSplitter ──> MiniLM embeddings ──> FAISS
-                                                                       │
+policies.md ──> MarkdownHeaderTextSplitter ──> MiniLM embeddings ──> FAISS (internal)
+policies_rbi.md ─────────────────────────────> MiniLM embeddings ──> FAISS (RBI)
+                                                                        │      │
 applicant ──> scorer.py (deterministic rules) ──> findings ──> retrieval query
-                     │                                                 │
-                     └──────────> prompt + retrieved excerpts ──> Groq LLM ──> memo
+                     │                                                 │      │
+                     └──────────> prompt + both sets of excerpts ──> Groq LLM ──> memo
                                                                        │
                                                               audit.py ──> SQLite
 ```
@@ -33,13 +34,24 @@ applicant ──> scorer.py (deterministic rules) ──> findings ──> retri
 The score is never produced by the LLM. The LLM only explains a scorecard result and
 cites retrieved policy. This is the point of the design: an auditable decision with a
 narrative layer on top, not a model that decides. `audit.py` makes that auditability
-concrete — every assessment (inputs, decision, findings, cited policy codes, full
-memo) is persisted and browsable from the app's "Audit log" tab.
+concrete — every assessment (inputs, decision, findings, cited codes, full memo) is
+persisted and browsable from the app's "Audit log" tab.
 
 LLM calls run on Groq's free tier (`openai/gpt-oss-120b`), not a paid provider —
 a deliberate choice to keep this project runnable at zero cost. See `CONTEXT.md`
 for why, and for what to do if Groq deprecates that model (they do this on a
 rolling schedule — check console.groq.com/docs/deprecations first).
+
+## Two RAG corpora, cited separately
+
+`policies.md` is the bank's own underwriting policy. `policies_rbi.md` is a
+second, independent corpus of real RBI regulatory provisions — the Fair
+Practices Code, IRAC's 90-day NPA classification norm, risk weights on
+unsecured consumer credit, the KYC Master Direction, and others — paraphrased
+from current RBI material, not invented. They're retrieved and cited
+separately (POL-xxx vs RBI-xxx) so the memo never presents a bank's own
+threshold as if the regulator mandated that exact number. See `CONTEXT.md` §4
+for the code-to-regulation mapping and why it matters.
 
 ## Demo profiles
 

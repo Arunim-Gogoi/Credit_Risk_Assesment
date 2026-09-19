@@ -42,12 +42,13 @@ decide", push back and explain this before complying.
 
 | File | Role |
 |---|---|
-| `policies.md` | The RAG corpus. 10 synthetic policies, POL-001..POL-010, `##`-delimited. |
+| `policies.md` | Internal bank policy corpus. 10 synthetic policies, POL-001..POL-010, `##`-delimited. |
+| `policies_rbi.md` | External RBI regulatory corpus. 7 real (paraphrased) RBI provisions, RBI-001..RBI-007, `##`-delimited. Kept separate from `policies.md` on purpose — see §4. |
 | `scorer.py` | `Applicant` dataclass + rule registry + `assess()`. Returns score, band, decision, findings. |
-| `rag.py` | FAISS build/load, findings-driven retrieval, system prompt, `explain()`. |
-| `app.py` | Streamlit UI. Two tabs: Assess (sidebar form → metrics → memo → policy expanders → scorecard trace → PD panel) and Audit log (browse past runs). |
+| `rag.py` | Builds/loads **two** FAISS indices (`faiss_index/` for POL-xxx, `faiss_index_rbi/` for RBI-xxx). `retrieve()` for internal policy, `retrieve_regulatory()` for RBI — the latter always pins RBI-001 (Fair Practices Code) plus whatever `RBI_MAPPING` in `rag.py` connects to the triggered POL codes. `explain()` takes both doc sets and produces a memo with a distinct REGULATORY BASIS section. |
+| `app.py` | Streamlit UI. Two tabs: Assess (sidebar form → metrics → memo → internal + RBI reference expanders → scorecard trace → PD panel) and Audit log (browse past runs). |
 | `model.py` | PD model on the Kaggle German Credit dataset. Second signal only, wired into the Assess tab's "Statistical signal" panel — degrades gracefully (caption, not crash) if `pd_model.joblib` isn't trained yet or scikit-learn isn't installed. |
-| `audit.py` | Append-only SQLite log (`audit_log.db`, gitignored). Every assessment — inputs, findings, decision, PD estimate, cited policy codes, full memo — is written here via `log_assessment()`, browsable via `recent()`/`get()`. |
+| `audit.py` | Append-only SQLite log (`audit_log.db`, gitignored). Every assessment — inputs, findings, decision, PD estimate, cited codes from **both** corpora, full memo — is written here via `log_assessment()`, browsable via `recent()`/`get()`. |
 | `SETUP.md` | Environment setup from zero. |
 | `requirements.txt` | Dependencies. |
 
@@ -89,6 +90,21 @@ decide", push back and explain this before complying.
 - **Fair lending is enforced in two places.** The system prompt forbids citing
   protected attributes (POL-008), and `model.py` drops `Sex` before training. Both
   are deliberate and should be pointed at during any demo.
+- **Two separate corpora, not one merged one.** `policies.md` (bank policy) and
+  `policies_rbi.md` (real RBI regulation, paraphrased from actual RBI circulars
+  and directions) are retrieved independently and cited with distinct prefixes
+  (POL-xxx vs RBI-xxx). This matters because they answer different questions: RBI
+  sets floors and frameworks (90-day NPA classification, risk-weight capital
+  rules, the Fair Practices Code's mandatory written-reason requirement); bank
+  policy is usually stricter and more specific on top of that floor. Merging them
+  into one corpus would let the memo present a bank's own DTI cutoff as if RBI
+  mandated that exact number, which it does not. `RBI_MAPPING` in `rag.py`
+  connects specific POL codes to the RBI provision they're built on
+  (POL-005→RBI-004, POL-006→RBI-003, POL-007→RBI-005, POL-009→RBI-007); RBI-001
+  is always cited since every decision needs a written specific reason under the
+  Fair Practices Code regardless of which internal rule drove it. If a new
+  internal policy is added with a real regulatory basis, add the mapping —
+  don't leave it to fall through to the generic RBI-001-only case.
 
 ## 5. The dataset question — settled
 
@@ -118,7 +134,16 @@ so 70% accuracy is the trivial baseline.
   credit culture. Directional only.
 - No auth. Every session shares the same local SQLite file; there's no per-user
   separation or access control on the audit log.
-- Retrieval is plain similarity search — no reranking, no hybrid BM25.
+- Retrieval is plain similarity search — no reranking, no hybrid BM25. Observed
+  concretely: the "thin file refer" case's RBI reference panel surfaces RBI-004
+  and RBI-006 (not actually relevant to a DTI/credit-score referral) alongside
+  the correctly-cited RBI-001, purely from semantic similarity on generic
+  finance vocabulary in a 7-chunk corpus. The memo text itself didn't cite the
+  noise — the LLM correctly used only what applied — but the reference panel
+  shows everything retrieved, not everything used, which could read as implying
+  more relevance than exists. Same root cause as the 10-chunk internal corpus
+  above; not urgent to fix for a demo, but don't present the reference panel's
+  contents as "what the decision was based on" without that caveat.
 
 If asked to present this as production-ready, decline and explain the above.
 
@@ -135,6 +160,25 @@ If asked to present this as production-ready, decline and explain the above.
 
 > Update this at the end of each session. Newest entry on top.
 
+- **[done]** Confirmed the RBI corpus works end to end with a live Groq call.
+  Thin-file-refer case: memo correctly cited only RBI-001 in REGULATORY BASIS
+  (POL-001/POL-002 genuinely have no RBI mapping, and the model didn't invent
+  one). Noted the reference panel surfaces retrieval noise (RBI-004, RBI-006)
+  the memo text itself correctly ignores — documented under Known weaknesses.
+- **[in progress]** Added a second RAG corpus: `policies_rbi.md`, 7 real RBI
+  regulatory provisions (Fair Practices Code, recovery conduct, risk weights on
+  unsecured credit, IRAC 90-day NPA norm, KYC Master Direction, digital lending
+  guidelines, interest-from-disbursement rule), paraphrased from current RBI
+  material via web search, not invented. Retrieved via a second FAISS index
+  (`faiss_index_rbi/`), separate from internal policy, with `RBI_MAPPING`
+  connecting specific POL codes to their regulatory basis. Memo now has a
+  REGULATORY BASIS section distinct from the policy ANALYSIS section. Verified
+  the mapping logic standalone (DTI-decline correctly pulls only RBI-001;
+  delinquency-decline correctly also pulls RBI-004) — **not yet tested against
+  a live Groq call or in the running app.** Next step: drop `policies_rbi.md`
+  and the updated `rag.py`/`app.py` into the project, delete any stale
+  `faiss_index_rbi/` if present, rerun the four demo cases, and confirm the
+  memo's REGULATORY BASIS section renders with correct RBI-xxx citations.
 - **[done]** Fixed a band-threshold bug: "thin file refer" demo case scored
   exactly 50 but the old ≥55 REFER cutoff sent it to DECLINE. Recentered
   thresholds to ≥80/≥65/≥50 (see §4). Verified all four demo cases now match

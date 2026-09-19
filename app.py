@@ -3,7 +3,7 @@ import json
 import streamlit as st
 
 from scorer import Applicant, assess
-from rag import build_index, retrieve, explain
+from rag import build_index, build_rbi_index, retrieve, retrieve_regulatory, explain
 
 try:
     from model import predict_pd, reconcile
@@ -21,8 +21,13 @@ def store():
     return build_index()
 
 
+@st.cache_resource
+def rbi_store():
+    return build_rbi_index()
+
+
 st.title("Credit Risk Analyst Assistant")
-st.caption("Deterministic scorecard + RAG over the internal policy manual. Decision support, not decision authority.")
+st.caption("Deterministic scorecard + RAG over internal policy and RBI regulation. Decision support, not decision authority.")
 
 tab_assess, tab_audit = st.tabs(["Assess", "Audit log"])
 
@@ -70,12 +75,18 @@ with tab_assess:
             st.subheader("Analyst memo")
             with st.spinner("Retrieving policy and drafting..."):
                 docs = retrieve(store(), result)
-                memo = explain(result, docs)
+                rbi_docs = retrieve_regulatory(rbi_store(), result)
+                memo = explain(result, docs, rbi_docs)
                 st.markdown(memo)
 
-            st.subheader("Policy references")
+            st.subheader("Internal policy references")
             for d in docs:
                 with st.expander(d.metadata.get("policy", d.metadata.get("code", "Policy"))):
+                    st.text(d.page_content)
+
+            st.subheader("RBI regulatory references")
+            for d in rbi_docs:
+                with st.expander(d.metadata.get("policy", d.metadata.get("code", "RBI"))):
                     st.text(d.page_content)
 
         pd_res, rec = None, None
@@ -119,7 +130,7 @@ with tab_assess:
                     st.caption("pd_model.joblib not found — run `python model.py` after placing the "
                                "German Credit CSV in data/. See CONTEXT.md §5.")
 
-        row_id = log_assessment(result, memo, docs, pd_res,
+        row_id = log_assessment(result, memo, docs + rbi_docs, pd_res,
                                  rec["verdict"] if rec else None)
         st.caption(f"Logged as audit record #{row_id}.")
     else:
