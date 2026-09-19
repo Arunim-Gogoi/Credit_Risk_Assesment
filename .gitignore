@@ -1,0 +1,6 @@
+.venv/
+.env
+faiss_index/
+pd_model.joblib
+data/
+__pycache__/
