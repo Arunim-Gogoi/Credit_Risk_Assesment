@@ -1,7 +1,8 @@
 # Credit Risk Analyst Assistant
 
 RAG-powered credit risk decision support: a deterministic scorecard decides,
-an LLM explains and cites the policy manual that backs each claim.
+an LLM explains and cites the policy manual that backs each claim. Every
+assessment is written to an append-only SQLite audit log.
 
 > Full setup from zero (VS Code, Windows/macOS/Linux): see `SETUP.md`.
 > Needs a free Groq API key (console.groq.com, no card required) in a local
@@ -25,11 +26,15 @@ policies.md ──> MarkdownHeaderTextSplitter ──> MiniLM embeddings ──>
 applicant ──> scorer.py (deterministic rules) ──> findings ──> retrieval query
                      │                                                 │
                      └──────────> prompt + retrieved excerpts ──> Groq LLM ──> memo
+                                                                       │
+                                                              audit.py ──> SQLite
 ```
 
 The score is never produced by the LLM. The LLM only explains a scorecard result and
 cites retrieved policy. This is the point of the design: an auditable decision with a
-narrative layer on top, not a model that decides.
+narrative layer on top, not a model that decides. `audit.py` makes that auditability
+concrete — every assessment (inputs, decision, findings, cited policy codes, full
+memo) is persisted and browsable from the app's "Audit log" tab.
 
 LLM calls run on Groq's free tier (`openai/gpt-oss-120b`), not a paid provider —
 a deliberate choice to keep this project runnable at zero cost. See `CONTEXT.md`
@@ -50,10 +55,17 @@ rolling schedule — check console.groq.com/docs/deprecations first).
 `model.py` trains a probability-of-default model on the Kaggle German Credit
 dataset as a *second, independent* signal shown alongside the policy decision —
 it does not feed the scorecard (that dataset has no income/credit-score/liability
-fields) and it does not replace the rules engine. See `CONTEXT.md` §5 for scope
-and caveats before using it. Not yet wired into `app.py`.
+fields) and it does not replace the rules engine. Wired into the "Statistical
+signal" panel in `app.py`; requires `python model.py` first (see `SETUP.md` §8).
+See `CONTEXT.md` §5 for full scope and caveats.
+
+## Audit log
+
+Every assessment — inputs, scorecard findings, decision, PD estimate if run,
+policy codes cited, full memo — is written to `audit_log.db` (gitignored, local
+only) via `audit.py`. Browse past runs in the app's "Audit log" tab. This is
+what makes the auditability claim above a fact rather than a slogan.
 
 ## If time remains
 - Batch mode: CSV upload, one memo per row, export to Excel
 - Add real source documents (RBI master directions) as a second collection
-- Log every decision to SQLite for the audit trail

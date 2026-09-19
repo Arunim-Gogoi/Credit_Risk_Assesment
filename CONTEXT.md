@@ -25,6 +25,8 @@ policies.md ──> MarkdownHeaderTextSplitter ──> MiniLM embeddings ──>
 applicant ──> scorer.py (deterministic rules) ──> findings ──> retrieval query
                      │                                                 │
                      └──────────> prompt + retrieved excerpts ──> Groq LLM ──> memo
+                                                                       │
+                                                              audit.py ──> SQLite
 ```
 
 **The LLM never produces the risk score or the decision.** `scorer.py` does, from
@@ -43,8 +45,9 @@ decide", push back and explain this before complying.
 | `policies.md` | The RAG corpus. 10 synthetic policies, POL-001..POL-010, `##`-delimited. |
 | `scorer.py` | `Applicant` dataclass + rule registry + `assess()`. Returns score, band, decision, findings. |
 | `rag.py` | FAISS build/load, findings-driven retrieval, system prompt, `explain()`. |
-| `app.py` | Streamlit UI. Sidebar form → metrics → memo → policy expanders → scorecard trace. |
-| `model.py` | **Optional.** PD model on the Kaggle German Credit dataset. Second signal only. |
+| `app.py` | Streamlit UI. Two tabs: Assess (sidebar form → metrics → memo → policy expanders → scorecard trace → PD panel) and Audit log (browse past runs). |
+| `model.py` | PD model on the Kaggle German Credit dataset. Second signal only, wired into the Assess tab's "Statistical signal" panel — degrades gracefully (caption, not crash) if `pd_model.joblib` isn't trained yet or scikit-learn isn't installed. |
+| `audit.py` | Append-only SQLite log (`audit_log.db`, gitignored). Every assessment — inputs, findings, decision, PD estimate, cited policy codes, full memo — is written here via `log_assessment()`, browsable via `recent()`/`get()`. |
 | `SETUP.md` | Environment setup from zero. |
 | `requirements.txt` | Dependencies. |
 
@@ -107,30 +110,38 @@ so 70% accuracy is the trivial baseline.
 - 10 policy chunks is far below the scale where retrieval quality is actually tested.
 - The PD model transfers poorly: 1994 German data, different currency, different
   credit culture. Directional only.
-- No persistence, no auth, no audit log. Every session starts clean.
+- No auth. Every session shares the same local SQLite file; there's no per-user
+  separation or access control on the audit log.
 - Retrieval is plain similarity search — no reranking, no hybrid BM25.
 
 If asked to present this as production-ready, decline and explain the above.
 
 ## 7. Backlog, roughly in value order
 
-1. SQLite audit log — every assessment, inputs, decision, retrieved policy codes,
-   timestamp. Cheapest big credibility win; makes the "auditable" claim concrete.
-2. Batch mode — CSV upload, one memo per row, export to Excel.
-3. Second corpus of real RBI master directions, retrieved separately from internal
+1. Batch mode — CSV upload, one memo per row, export to Excel.
+2. Second corpus of real RBI master directions, retrieved separately from internal
    policy, with the memo distinguishing regulation from bank policy.
-4. Hybrid retrieval (BM25 + dense) — matters once the corpus exceeds ~100 chunks.
-5. Reranking with a cross-encoder.
-6. Risk-based pricing output per POL-009 rather than the flat 14%.
+3. Hybrid retrieval (BM25 + dense) — matters once the corpus exceeds ~100 chunks.
+4. Reranking with a cross-encoder.
+5. Risk-based pricing output per POL-009 rather than the flat 14%.
 
 ## 8. Status log
 
 > Update this at the end of each session. Newest entry on top.
 
-- **[in progress]** Groq auth fixed, but `llama-3.3-70b-versatile` came back
-  `model_not_found` — Groq deprecated it 2026-08-16. Switched `rag.py` to
-  `openai/gpt-oss-120b`, Groq's recommended replacement. Not yet confirmed
-  working end to end — next step: rerun the DTI-decline case and confirm the
-  memo renders and cites POL-001.
+- **[in progress]** Wired `model.py`'s PD signal into `app.py` (new sidebar
+  inputs for Housing/Savings/Checking/Purpose, "Statistical signal" panel,
+  graceful fallback if untrained). Added `audit.py` — append-only SQLite log,
+  every assessment persisted, new "Audit log" tab in `app.py` to browse past
+  runs. Updated README/CONTEXT to match. **Not yet tested locally** — next
+  step: run all four demo profiles from the table above, confirm the PD panel
+  either shows a real number (if `pd_model.joblib` exists) or fails gracefully
+  (if not), and confirm the Audit log tab lists each run after Assess. Then
+  commit and push.
+- **[done]** Groq auth fixed, `llama-3.3-70b-versatile` swapped for
+  `openai/gpt-oss-120b` after Groq deprecated the former (2026-08-16).
+  Confirmed working end to end: DTI-decline case returns DECLINE/band D with
+  POL-001 cited as principal reason. Pushed to GitHub at
+  github.com/Arunim-Gogoi/Credit_Risk_Assesment.
 - **[done]** Scaffold delivered: `policies.md`, `scorer.py`, `rag.py`, `app.py`,
   `model.py`, `SETUP.md`, `requirements.txt`.
