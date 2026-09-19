@@ -123,11 +123,11 @@ def assess(a: Applicant) -> dict:
     score = 0 if hard_fail else max(0, min(100, total))
     if hard_fail:
         band, decision = "D", "DECLINE"
-    elif score >= 85:
+    elif score >= 80:
         band, decision = "A", "APPROVE"
-    elif score >= 70:
+    elif score >= 65:
         band, decision = "B", "APPROVE"
-    elif score >= 55:
+    elif score >= 50:
         band, decision = "C", "REFER"
     else:
         band, decision = "D", "DECLINE"

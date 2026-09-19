@@ -58,7 +58,13 @@ decide", push back and explain this before complying.
 - **Scoring base is 50 points**, adjusted by rule points, clamped 0–100. Any rule
   returning ≤ −100 is a *hard fail*: score goes to 0, decision to DECLINE, regardless
   of other positives. Hard fails model policy floors that cannot be offset.
-- **Bands:** ≥85 A / ≥70 B / ≥55 C (REFER) / else D (DECLINE).
+- **Bands:** ≥80 A / ≥65 B / ≥50 C (REFER) / else D (DECLINE). Recentered from an
+  earlier ≥85/≥70/≥55 ladder: the base score is 50 (before any findings), and the
+  original thresholds meant a genuinely neutral applicant — net-zero adjustment,
+  no strong positives or negatives — auto-declined instead of landing in REFER.
+  Caught via the "thin file refer" demo case (borderline score 690 + borderline
+  DTI 49% nets to exactly 50) coming back DECLINE instead of REFER. Verify with
+  the four-case table in `README.md` before touching these numbers again.
 - **Retrieval is keyed on triggered findings, not the raw profile.** Embedding
   "income 90000, score 735" retrieves nothing useful; numbers do not embed
   meaningfully. `retrieve()` builds the query from negative findings, then pins any
@@ -129,6 +135,10 @@ If asked to present this as production-ready, decline and explain the above.
 
 > Update this at the end of each session. Newest entry on top.
 
+- **[done]** Fixed a band-threshold bug: "thin file refer" demo case scored
+  exactly 50 but the old ≥55 REFER cutoff sent it to DECLINE. Recentered
+  thresholds to ≥80/≥65/≥50 (see §4). Verified all four demo cases now match
+  `README.md`'s expected column.
 - **[in progress]** Wired `model.py`'s PD signal into `app.py` (new sidebar
   inputs for Housing/Savings/Checking/Purpose, "Statistical signal" panel,
   graceful fallback if untrained). Added `audit.py` — append-only SQLite log,
