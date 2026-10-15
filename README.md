@@ -19,17 +19,9 @@ First run downloads the MiniLM embedding model (~90 MB) and builds `faiss_index/
 Delete that folder after editing `policies.md`, or call `build_index(force=True)`.
 
 ## Architecture
+<img width="4913" height="2063" alt="Blank diagram (3)" src="https://github.com/user-attachments/assets/ca48ddd2-217c-45fc-9303-9c6d94cfafb8" />
 
-```
-policies.md ──> MarkdownHeaderTextSplitter ──> MiniLM embeddings ──> FAISS (internal)
-policies_rbi.md ─────────────────────────────> MiniLM embeddings ──> FAISS (RBI)
-                                                                        │      │
-applicant ──> scorer.py (deterministic rules) ──> findings ──> retrieval query
-                     │                                                 │      │
-                     └──────────> prompt + both sets of excerpts ──> Groq LLM ──> memo
-                                                                       │
-                                                              audit.py ──> SQLite
-```
+
 
 The score is never produced by the LLM. The LLM only explains a scorecard result and
 cites retrieved policy. This is the point of the design: an auditable decision with a
